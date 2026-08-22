@@ -1,0 +1,80 @@
+python3 analysis4.py --threshold 2 --ltmin 0.02 --ltmax 0.1 --nbins 10 --mu4 45 --mu3 0 --md4 45 --md2 0
+python3 analysis4.py --threshold 5 --ltmin 0.02 --ltmax 0.1 --nbins 10 --mu4 45 --mu3 0 --md4 45 --md2 0
+python3 analysis4.py --threshold 10 --ltmin 0.02 --ltmax 0.1 --nbins 10 --mu4 45 --mu3 0 --md4 45 --md2 0
+python3 analysis4.py --threshold 3 --ltmin 0.0 --ltmax 0.4 --nbins 25 --mu4 45 --mu3 55 --md4 45 --md2 55
+python3 analysis4.py --threshold 3 --ltmin 0.02 --ltmax 0.1 --nbins 25 --mu4 45 --mu3 55 --md4 45 --md2 55
+python3 analysis4.py --threshold 3 --ltmin 0.0 --ltmax 0.4 --nbins 10 --mu4 45 --mu3 55 --md4 45 --md2 55
+
+
+python3 analysis4.py --threshold 2 --ltmin 0.02 --ltmax 0.1 --nbins 10 --mu4 1 --mu3 0 --md4 2 --md2 0
+
+python3 analysis4.py --threshold 1 --ltmin 0.0 --ltmax 0.4 --nbins 25 --mu4 45 --mu3 55 --md4 45 --md2 55
+
+
+c4 magdown 59
+c4 mu 80
+c3mu 156
+c2md246
+c1mu95
+c1md22
+
+python3 analysis4.py --threshold 1 --ltmin 0.0 --ltmax 0.4 --nbins 25 --data_up 4_75-3_150-1_85 --data_down 4_54-2_241-1_15
+python3 analysis4.py --threshold 1 --ltmin 0.0 --ltmax 0.4 --nbins 10 --data_up 4_7 --data_down 4_7
+
+python3 analysis4.py --threshold 100 --ltmin 0.0 --ltmax 0.4 --nbins 25 --data_up 4_5 --data_down 4_5
+
+
+640 files....
+
+# Parameters
+THRESHOLD=100
+LTMIN=0.0
+LTMAX=0.4
+NBINS=25
+
+DATA_UP="4_75-3_150-1_85"
+DATA_DOWN="4_54-2_241-1_15"
+
+
+module load lxbatch/eossubmit
+condor_rm ahulsber
+condor_submit /eos/user/a/ahulsber/scripts/HTCondor/subfiles/analysis1.sub
+
+
+# to do
+delete hists from memory if they not used anymore
+test weighting algorithm more data
+improve cuts 
+make cuts for K0(DD)
+test K0(DD) sample
+
+
+
+
+# python3 analysis4.py --threshold 100 --ltmin 0.0 --ltmax 0.4 --nbins 25 --data_up 4_5 --data_down 4_5
+# python analysis4.py --threshold 100 --ltmin 0.0 --ltmax 3 --nbins 25 --data_up 4_5 --data_down 4_5 --track dd
+# python make_snapshot.py --ltmin 0.0 --ltmax 3 --data_up 4_100 -3_150-1_85 --data_down 4_54-2_241-1_15 --track ll
+# python analysis4.py --threshold 8 --ltmin 0.0 --ltmax 0.4 --nbins 25 --file 6/ll_160
+
+python analysis4.py --threshold 2 --ltmin 0.0 --ltmax 0.4 --nbins 5 --file 6/ll_10
+ll
+Up: 25c4_80-25c3_156-25c1_95-24c4a_33-24c3a_83-24c2a_240
+Down: 25c4_59-25c2_246-25c1_22-24c4a_52-24c3a_69-24c2a_72
+
+dd
+Up: 25c4_126-25c3_320-25c1_426-24c4a_132-24c3a_305-24c2a_57
+Down: 25c4_188-25c2_1007-25c1_100-24c4a_240-24c3a_250-24c2a_14
+
+python3 /eos/user/a/ahulsber/scripts/scripts/sig_eff_plots.py \
+--base_folder /eos/user/a/ahulsber/scripts/data/sig_eff/08-14/Pip_Hlt1TrackMVADecision_TOS_15-59 \
+--hlt1_cut Pip_Hlt1TrackMVADecision_TOS
+
+python3 /eos/user/a/ahulsber/scripts/scripts/sig_eff_plots.py \
+--base_folder /eos/user/a/ahulsber/scripts/data/sig_eff/08-14/KS_Hlt1TwoTrackKsDecision_TOS_15-59 \
+--hlt1_cut KS_Hlt1TwoTrackKsDecision_TOS
+
+python3 /eos/user/a/ahulsber/scripts/scripts/sig_eff_plots.py \
+--base_folder /eos/user/a/ahulsber/scripts/data/sig_eff/08-14/DpTIS_15-58 \
+--hlt1_cut DpTIS
+
+/eos/user/a/ahulsber/scripts/data/sig_eff/08-14/Pip_Hlt1TrackMVADecision_TOS_15-59/dd_25c1_magup/Pip_Hlt1TrackMVADecision_TOS/model.root
