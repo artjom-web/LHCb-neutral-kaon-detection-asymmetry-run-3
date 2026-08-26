@@ -315,6 +315,7 @@ class Analysis:
             }
             """)
             ROOT._update_weight_3d_declared = True
+            ROOT.TH1.SetDefaultSumw2(True)
 
         
 
@@ -397,6 +398,47 @@ class Analysis:
  
     def cuts(self, cut=''):
         rdf1 = self.rdf
+
+        # DpTIS filters
+        trigger_cols_dd = [
+            "Dp_Hlt1LowPtMuonDecision_TIS",
+            "Dp_Hlt1TrackMVADecision_TIS",
+            "Dp_Hlt1TrackMuonMVADecision_TIS",
+            "Dp_Hlt1DiPhotonHighMassDecision_TIS",
+            "Dp_Hlt1D2KshhDecision_TIS",
+            "Dp_Hlt1DiElectronDisplacedDecision_TIS",
+            "Dp_Hlt1TwoTrackKsDecision_TIS",
+            "Dp_Hlt1KsLLDetachedTrackDecision_TIS",
+            "Dp_Hlt1OneMuonTrackLineDecision_TIS",
+            "Dp_Hlt1TwoTrackMVADecision_TIS",
+            "Dp_Hlt1DiMuonHighMassDecision_TIS",
+            "Dp_Hlt1TrackElectronMVADecision_TIS",
+            "Dp_Hlt1DiMuonDisplacedDecision_TIS",
+            "Pip_Hlt1TrackMVADecision_TOS",
+        ]
+
+        trigger_cols_ll = [
+            "Dp_Hlt1D2KshhDecision_TIS",
+            "Dp_Hlt1DiElectronDisplacedDecision_TIS",
+            "Dp_Hlt1DiMuonDisplacedDecision_TIS",
+            "Dp_Hlt1DiMuonHighMassDecision_TIS",
+            "Dp_Hlt1DiPhotonHighMassDecision_TIS",
+            "Dp_Hlt1KsLLDetachedTrackDecision_TIS",
+            "Dp_Hlt1LowPtMuonDecision_TIS",
+            "Dp_Hlt1OneMuonTrackLineDecision_TIS",
+            "Dp_Hlt1TrackElectronMVADecision_TIS",
+            "Dp_Hlt1TrackMVADecision_TIS",
+            "Dp_Hlt1TrackMuonMVADecision_TIS",
+            "Dp_Hlt1TwoTrackKsDecision_TIS",
+            "Dp_Hlt1TwoTrackMVADecision_TIS",
+        ]
+
+        if self.track == 'll':
+            trigger_filter = " || ".join(trigger_cols_ll)
+        else:
+            trigger_filter = " || ".join(trigger_cols_dd)
+
+
         if cut == '' or cut == 'mass_lt':
             rdf1 = (rdf1
                     .Filter(f"Dp_M > {self.min_m}", f"Dp_M > {self.min_m}")
@@ -409,47 +451,16 @@ class Analysis:
             rdf1 = rdf1.Filter("KS_Hlt1TwoTrackKsDecision_TOS", "HLT1: KS TwoTrackKsDecision_TOS")
         if cut == 'Pip_Hlt1TrackMVADecision_TOS':
             rdf1 = rdf1.Filter("Pip_Hlt1TrackMVADecision_TOS", "HLT1: Pip_Hlt1TrackMVADecision_TOS")
-
         if cut == 'DpTIS':
-            trigger_cols_dd = [
-                "Dp_Hlt1LowPtMuonDecision_TIS",
-                "Dp_Hlt1TrackMVADecision_TIS",
-                "Dp_Hlt1TrackMuonMVADecision_TIS",
-                "Dp_Hlt1DiPhotonHighMassDecision_TIS",
-                "Dp_Hlt1D2KshhDecision_TIS",
-                "Dp_Hlt1DiElectronDisplacedDecision_TIS",
-                "Dp_Hlt1TwoTrackKsDecision_TIS",
-                "Dp_Hlt1KsLLDetachedTrackDecision_TIS",
-                "Dp_Hlt1OneMuonTrackLineDecision_TIS",
-                "Dp_Hlt1TwoTrackMVADecision_TIS",
-                "Dp_Hlt1DiMuonHighMassDecision_TIS",
-                "Dp_Hlt1TrackElectronMVADecision_TIS",
-                "Dp_Hlt1DiMuonDisplacedDecision_TIS",
-                "Pip_Hlt1TrackMVADecision_TOS",
-            ]
-
-            trigger_cols_ll = [
-                "Dp_Hlt1D2KshhDecision_TIS",
-                "Dp_Hlt1DiElectronDisplacedDecision_TIS",
-                "Dp_Hlt1DiMuonDisplacedDecision_TIS",
-                "Dp_Hlt1DiMuonHighMassDecision_TIS",
-                "Dp_Hlt1DiPhotonHighMassDecision_TIS",
-                "Dp_Hlt1KsLLDetachedTrackDecision_TIS",
-                "Dp_Hlt1LowPtMuonDecision_TIS",
-                "Dp_Hlt1OneMuonTrackLineDecision_TIS",
-                "Dp_Hlt1TrackElectronMVADecision_TIS",
-                "Dp_Hlt1TrackMVADecision_TIS",
-                "Dp_Hlt1TrackMuonMVADecision_TIS",
-                "Dp_Hlt1TwoTrackKsDecision_TIS",
-                "Dp_Hlt1TwoTrackMVADecision_TIS",
-            ]
-
-            if self.track == 'll':
-                trigger_filter = " || ".join(trigger_cols_ll)
-            else:
-                trigger_filter = " || ".join(trigger_cols_dd)
-
             rdf1 = rdf1.Filter(trigger_filter, "HLT1 trigger selection")
+        if cut == 'DpTIS_PipMVATOS':
+            rdf1 = rdf1.Filter(f'{trigger_filter}', "DpTIS HLT1 trigger selection")
+            rdf1 = rdf1.Filter(f'Pip_Hlt1TrackMVADecision_TOS', "PipTOS HLT1 trigger selection")
+
+        if cut == 'DpTIS_KSTwoTracks':
+            rdf1 = rdf1.Filter(f'{trigger_filter}', "DpTIS HLT1 trigger selection")
+            rdf1 = rdf1.Filter(f'KS_Hlt1TwoTrackKsDecision_TOS', "KsTOS HLT1 trigger selection")
+
 
         if cut == '' or cut == 'kin':
             if self.track == 'll':
@@ -555,11 +566,8 @@ class Analysis:
     # Initial weights
     #############################################
 
-    def init_weights(self):
-        self.iteration = 0
+    def init_massfit(self, folder):
         keys = ["Dp_M_p", 'Dp_M_m', "Dp_M"]
-        massfit_folder = self.base_folder + 'initial_massfit/'
-        # init the hists
         for key in keys:
             if key.endswith("_p"):
                 column = key[:-2]
@@ -584,7 +592,14 @@ class Analysis:
         h_m = self.hists_filled['Dp_M_m']
 
         # massfit
-        self.mass_fit(h_p, h_m, massfit_folder, self.standard_model)
+        self.mass_fit(h_p, h_m, folder, self.standard_model)
+
+
+    def init_weights(self):
+        self.iteration = 0
+        
+        massfit_folder = self.base_folder + 'initial_massfit/'
+        self.init_massfit(massfit_folder)
 
         # finding the range
         f = ROOT.TFile.Open(massfit_folder + "model.root")
@@ -756,7 +771,8 @@ class Analysis:
             ROOT.RooFit.Extended(True),
             ROOT.RooFit.Save(True),
             ROOT.RooFit.EvalBackend("legacy"),
-            ROOT.RooFit.SumW2Error(True),   # add this
+            ROOT.RooFit.SumW2Error(True),
+            ROOT.RooFit.Offset(True),   # NEW — improves numerical conditioning of the NLL for large N
         ]
 
         params = model_tot.getParameters(obs)
@@ -805,15 +821,16 @@ class Analysis:
             ws.writeToFile(model_file_out)
 
             outfile = ROOT.TFile(model_file_out, "UPDATE")
+            outfile.cd()
             h_plus.Write("h_plus")
             h_minus.Write("h_minus")
 
             # ---- fit report via OS-level stdout redirection ----
             report_path = folder + "_fit_report.txt"
             sys.stdout.flush()
-            saved_fd = os.dup(1)              # save real stdout
+            saved_fd = os.dup(1)
             with open(report_path, "w") as f:
-                os.dup2(f.fileno(), 1)        # point fd 1 (stdout) at the file
+                os.dup2(f.fileno(), 1)
                 try:
                     results.Print("v")
                     print("\n--- Covariance Matrix ---")
@@ -822,33 +839,125 @@ class Analysis:
                     results.correlationMatrix().Print()
                 finally:
                     sys.stdout.flush()
-                    os.dup2(saved_fd, 1)      # restore real stdout
+                    os.dup2(saved_fd, 1)
                     os.close(saved_fd)
-
 
             outfile.Close()
 
 
-
-        def do_fit(strategy=1):
-            args = fit_args + ([ROOT.RooFit.Strategy(strategy)] if strategy > 1 else [])
+        def do_fit(strategy):
+            args = fit_args + [ROOT.RooFit.Strategy(strategy)]
             return model_tot.fitTo(combData, *args)
 
-        def fit_ok(res):
-            return res.status() == 0 and res.covQual() == 3
 
-        for attempt in range(10): 
-            if os.path.exists(params_file_out) and not (new_run==True and attempt == 0):
-                params.readFromFile(params_file_out)
+        def is_good(res):
+            """Full convergence: RooFit's strictest, most trustworthy tier."""
+            return (res.status() == 0 and res.covQual() == 3
+                    and np.isfinite(res.minNll()) and np.isfinite(res.edm()))
 
-            results = do_fit(strategy=2)
-            params.writeToFile(params_file_out)
-            if fit_ok(results):
-                print(f"Converged after {attempt+1} attempt(s).")
+
+        def is_acceptable(res):
+            """Usable but not ideal — accepted only as a fallback if nothing
+            reaches is_good() in the attempt budget."""
+            return (res.status() == 0 and res.covQual() >= 2
+                    and np.isfinite(res.minNll()) and np.isfinite(res.edm()))
+
+
+        def better_result(new, old):
+            """Tiered comparison: status, then covQual, then NLL, then EDM.
+            Used both to track the best-so-far attempt and to decide what to
+            jitter from next."""
+            if old is None:
+                return True
+            new_ok, old_ok = new.status() == 0, old.status() == 0
+            if new_ok != old_ok:
+                return new_ok
+            if new.covQual() != old.covQual():
+                return new.covQual() > old.covQual()
+            new_nll, old_nll = new.minNll(), old.minNll()
+            if np.isfinite(new_nll) and np.isfinite(old_nll) and not np.isclose(new_nll, old_nll):
+                return new_nll < old_nll
+            return new.edm() < old.edm()
+
+
+        def jitter_floating_params(rng, sigma_mult):
+            """Nudge floating parameters away from the current point to escape a
+            bad basin. Jitters in units of each parameter's own fit uncertainty
+            when available (a physically meaningful step size), falling back to
+            a fraction of the parameter's range if the error isn't usable yet."""
+            for var in params:
+                if not isinstance(var, RooRealVar) or var.isConstant():
+                    continue
+                lo, hi = var.getMin(), var.getMax()
+                sigma = var.getError()
+                if not np.isfinite(sigma) or sigma <= 0:
+                    sigma = 0.05 * (hi - lo)
+                new_val = var.getVal() + rng.normal(0, sigma_mult * sigma)
+                var.setVal(float(np.clip(new_val, lo, hi)))
+
+
+        MAX_ATTEMPTS = 8
+        seed = 1
+        rng = np.random.default_rng(seed)
+
+        if os.path.exists(params_file_out) and not new_run:
+            params.readFromFile(params_file_out)
+
+        initial_params = params.snapshot()   # attempt 0's controlled starting point (warm-started, if available)
+
+        best_results = None
+        best_params = None
+
+        for attempt in range(MAX_ATTEMPTS):
+            if attempt == 0:
+                params.assign(initial_params)
+            elif best_params is not None:
+                params.assign(best_params)
+                sigma_mult = 1.0 + 0.75 * (attempt - 1)   # widen the jump the longer it takes
+                jitter_floating_params(rng, sigma_mult)
+            else:
+                # nothing usable found yet even once — restart from the controlled
+                # point with a mild jitter rather than compounding on a bad state
+                params.assign(initial_params)
+                jitter_floating_params(rng, 0.5)
+
+            strategy = 1 if attempt < 2 else 2   # cheap first two tries, escalate only if needed
+            results = do_fit(strategy)
+            current_params = params.snapshot()
+
+            print(f"Attempt {attempt + 1}/{MAX_ATTEMPTS}: status={results.status()}, "
+                f"covQual={results.covQual()}, EDM={results.edm():.3g}, "
+                f"NLL={results.minNll():.6g}, strategy={strategy}")
+
+            if better_result(results, best_results):
+                best_results = results
+                best_params = current_params
+
+            if is_good(results):
+                print(f"Converged (covQual=3) after {attempt + 1} attempt(s).")
                 break
-        if not fit_ok(results):
-            print(f"WARNING: fit status={results.status()}, covQual={results.covQual()}")
-            fit_converges = False
+        else:
+            print(f"WARNING: did not reach full convergence in {MAX_ATTEMPTS} attempts; "
+                f"using best result found (status={best_results.status()}, "
+                f"covQual={best_results.covQual()}, edm={best_results.edm():.3g}).")
+
+        results = best_results
+        fit_converges = is_good(results)
+
+        # restore the model's LIVE parameters to the best snapshot found — fitTo
+        # leaves them at whatever the *last* attempt produced, which isn't
+        # necessarily best_results if a later jitter made things worse. Everything
+        # below (save_ws, boundary checks, N_sig.getVal(), A_sig.getError()) reads
+        # live parameter state, so this must happen before any of that runs.
+        params.assign(best_params)
+
+        if fit_converges:
+            params.writeToFile(params_file_out)   # only ever persist a fully-converged snapshot
+        elif is_acceptable(results):
+            print("WARNING: best result is only partially acceptable (covQual < 3); "
+                "not persisting to warm-start file.")
+        else:
+            print("WARNING: no acceptable fit found in any attempt; not persisting to warm-start file.")
 
         print("h_tot entries:", h_tot.GetEntries())
         print("data_tot.sumEntries():", data_tot.sumEntries())
@@ -870,16 +979,17 @@ class Analysis:
                     if abs(val - var.getMin()) / err < 3 or abs(val - var.getMax()) / err < 3:
                         print(f"WARNING: {var.GetName()} = {val:.4f} +/- {err:.4f} "
                             f"in [{var.getMin():.4f}, {var.getMax():.4f}] — close to boundary!")
-        
+
         Nsig = N_sig.getVal()
-        if Nsig > 1e-7: print(f"1/sqrt(N) = {(1.0/Nsig)**0.5:.6f}") 
-        else: print(f"Warning: nsig too small: {Nsig}")
+        if Nsig > 1e-7:
+            print(f"1/sqrt(N) = {(1.0/Nsig)**0.5:.6f}")
+        else:
+            print(f"Warning: nsig too small: {Nsig}")
         print(f"A_sig_err = {A_sig.getError():.6f}\n")
 
-
         return fit_converges
-
-    ##########################################
+        
+    ########################################
     # weighting cycle
     ########################################
     def weighting_cycle(
@@ -1375,7 +1485,7 @@ class Analysis:
             latex = ROOT.TLatex()
             latex.SetNDC()
             latex.SetTextSize(0.04)
-            latex.DrawLatex(0.65, 0.82, f"Entries = {data.sumEntries()}")
+            latex.DrawLatex(0.65, 0.82, f"Entries = {data.sumEntries():.2e}")
 
             lower.cd()
             pull_frame.SetTitle("")
@@ -1890,6 +2000,10 @@ class Analysis:
             wk = weight_keys[proc]
             hkey = f'h3D_{wk}-KS_LT-Dp_M-Dp_charge'
             self.hists_filled[hkey] = self.hists[hkey].GetValue()
+
+            # Store proper weighted uncertainties
+            if self.hists_filled[hkey].GetSumw2N() == 0:
+                self.hists_filled[hkey].Sumw2()
 
         # mass fits
         for proc in proc_names:

@@ -98,7 +98,7 @@ path_to_key = {}   # NEW
 os.makedirs(base_folder, exist_ok=True)
 A_bias = np.random.RandomState(0).uniform(-1, 1)
 
-model_names = ['johnson_exp1', 'johnson_exp', 'johnson_tail_expo', 'johnson_gauss_exp']
+model_names =  ['johnson_exp1', 'johnson_exp', 'johnson_tail_expo', 'johnson_gauss_exp']
 standard_model = 'johnson_exp1'
 if track == 'dd':
     lt_bin_edges = [0.0, 0.4686, 0.5727, 0.6518, 0.7385, 0.8259, 0.9733, 3.0]
@@ -175,7 +175,7 @@ for key in ana_plan:
         
 
     ana = Analysis(track)  
-    ana.kinvar_bins = 20
+    ana.kinvar_bins = 15
     ana.base_folder = base_folder + key + f'_{tot_files}/'
     os.makedirs(ana.base_folder, exist_ok=True)
     ana.lt_bin_edges = lt_bin_edges
@@ -211,7 +211,7 @@ for key in ana_plan:
     ana.ltbin_means()
 
 
-    # ana.plot_weighting_performance(plot_w_kin = True, plot_A_kin = True, plot_A_LT = True)
+    ana.plot_weighting_performance(plot_w_kin = True, plot_A_kin = True, plot_A_LT = True)
 
     ana.plot_weighting_statistics()
 

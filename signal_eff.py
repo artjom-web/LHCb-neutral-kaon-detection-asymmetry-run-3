@@ -44,7 +44,5 @@ ana.init_hist_params()
 
 for cut in cuts:
     ana.cuts(cut)
-    ana.init_hists(["Dp_M_p", 'Dp_M_m', "Dp_M"])
-    ana.fill_hists(["Dp_M_p", 'Dp_M_m', "Dp_M"])
-    ana.mass_fit(ana.hists_filled['Dp_M_p'], ana.hists_filled['Dp_M_m'], folder + cut + '/', 'johnson_exp')
+    ana.init_massfit(folder + cut + '/')
     ana.plot_massfit(folder + cut + '/')

@@ -5,6 +5,9 @@ import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from scipy.stats import chi2 as chi2_dist
+
+
 
 TRACKS = ["ll", "dd"]
 CUTS = ["KS_Hlt1TwoTrackKsDecision_TOS", "Pip_Hlt1TrackMVADecision_TOS", "DpTIS"]
@@ -40,6 +43,18 @@ combined.to_csv(f"{outfolder}combined_asymmetry.csv", index=False)
 print(f"Combined results saved to {outfolder}combined_asymmetry.csv")
 
 
+
+def _fit_chi2_pvalue(x, y, yerr, popt, n_params=2):
+    y_pred = _linear(x, *popt)
+    resid = (y - y_pred) / yerr
+    chi2_val = np.sum(resid**2)
+    dof = len(x) - n_params
+    if dof <= 0:
+        return chi2_val, dof, np.nan
+    pval = chi2_dist.sf(chi2_val, dof)   # sf = 1 - cdf, survival function
+    return chi2_val, dof, pval
+
+
 def _errorbar_series(ax, x, xerr, y, yerr, label = None, color = None, offset=0.0):
     if label != None:
         ax.errorbar(x + offset, y, xerr=xerr, yerr=yerr,
@@ -72,6 +87,8 @@ def _set_shared_ylim(y, yerr, cap_lim=1e-2, pad=0.2):
     return lo - pad * rng, hi + pad * rng
 
 def _fmt_sci(val, err):
+    if val == 0:
+        return f"(0.0 ± {err:.1e})"
     exp = int(np.floor(np.log10(abs(val))))
     scale = 10 ** exp
     return f"({val/scale:.1f} ± {err/scale:.1f}) × 10$^{{{exp}}}$"
@@ -101,7 +118,7 @@ for track in TRACKS:
         _errorbar_series(ax, grp["x"].to_numpy(), xerr,
                          A_biased, grp["A_err"].to_numpy(),
                          cut, f"C{k}")
-    _finalize_axis(ax, f"SM after reweighting ({track})", r"KS lifetime $(t/\tau)$", "A blinded")
+    _finalize_axis(ax, f"after reweighting ({track})", r"KS lifetime $(t/\tau)$", "A blinded")
     y_all = sm_after["A"].to_numpy() + A_bias
     yerr_all = sm_after["A_err"].to_numpy()
     ymin, ymax = _set_shared_ylim(y_all, yerr_all)
@@ -147,7 +164,7 @@ else:
     ymin, ymax = _set_shared_ylim(y_all, yerr_all)
     ax_ll.set_ylim(ymin, ymax)
 
-    fig.suptitle("SM after reweighting", fontsize=14, weight="bold")
+    fig.suptitle("after reweighting", fontsize=14, weight="bold")
     plt.savefig(f"{outfolder}A_SM_shared.pdf", dpi=300, bbox_inches="tight")
     plt.close(fig)
 # ── Compute fits once ──
@@ -161,6 +178,7 @@ sm_after = combined[
     & (combined["procedure"] == "after")
 ]
 
+
 fits = []
 for track in TRACKS:
     for cut in CUTS:
@@ -168,14 +186,27 @@ for track in TRACKS:
         if grp.empty:
             print(f"WARNING: no data for {track}_{cut}, skipping fit")
             continue
+        x_vals = grp["x"].to_numpy()
+        y_vals = grp["A"].to_numpy()
+        y_errs = grp["A_err"].to_numpy()
+
         popt, pcov = curve_fit(
-            _linear, grp["x"].to_numpy(), grp["A"].to_numpy(),
-            sigma=grp["A_err"].to_numpy(), absolute_sigma=True,
+            _linear, x_vals, y_vals,
+            sigma=y_errs, absolute_sigma=True,
         )
+        chi2_val, dof, pval = _fit_chi2_pvalue(x_vals, y_vals, y_errs, popt)
+
         fits.append({
             "track": track, "cut": cut, "grp": grp,
             "popt": popt, "slope_err": np.sqrt(pcov[0, 0]),
+            "chi2": chi2_val, "dof": dof, "pval": pval,
         })
+
+def _fmt_pval(pval):
+    if not np.isfinite(pval):
+        return "p=n/a"
+    return f"p={pval:.3f}" if pval >= 1e-3 else f"p={pval:.1e}"
+
 
 # ── PDF 4: per-cut ll vs dd overlay with fits ──
 cuts_with_data = sm_after["cut"].unique()
@@ -193,97 +224,74 @@ else:
             xerr = np.vstack([grp["xerr_lo"].to_numpy(), grp["xerr_hi"].to_numpy()])
             A_biased = grp["A"].to_numpy() + A_bias
             _errorbar_series(ax, grp["x"].to_numpy(), xerr,
-                             A_biased, grp["A_err"].to_numpy(),
+                            A_biased, grp["A_err"].to_numpy(),
                                 color= f"C{k}")
             y_vals.append(A_biased)
             y_errs.append(grp["A_err"].to_numpy())
             x_fit = np.linspace(0.0, 3.0, 100)
             ax.plot(x_fit, _linear(x_fit, *fit["popt"]) + A_bias, "--", color=f"C{k}", lw=1.2,
-                    label=f"{fit['track']} fit (a={_fmt_sci(fit['popt'][0], fit['slope_err'])})")
+                    label=f"{fit['track']}")
+
 
         _finalize_axis(ax, cut, r"KS lifetime $(t/\tau)$", "A blinded" if idx == 0 else None)
-        ax.legend(fontsize='large')
+        # ax.legend(fontsize='large')
         if y_vals:
             y_all = np.concatenate(y_vals)
             yerr_all = np.concatenate(y_errs)
             ymin, ymax = _set_shared_ylim(y_all, yerr_all)
             ax.set_ylim(ymin, ymax)
 
-    fig.suptitle("SM after reweighting: ll vs dd", fontsize=14, weight="bold")
+
+    fig.suptitle("after reweighting: ll vs dd", fontsize=14, weight="bold")
     plt.savefig(f"{outfolder}A_compare_tracks.pdf", dpi=300, bbox_inches="tight")
     plt.close(fig)
 
+cut_dict = {'KS_Hlt1TwoTrackKsDecision_TOS': 'KS_TwoTracks',
+    'Pip_Hlt1TrackMVADecision_TOS': 'Pip_TrackMVA_TOS',
+    'DpTIS': 'Dp*TIS'}
+
+    
 # ── Slope summary plot ──
-slopes = [f["popt"][0] for f in fits]
-slope_errs = [f["slope_err"] for f in fits]
-labels = [f"{f['track']}\n{f['cut']}" for f in fits]
+slopes = np.array([f["popt"][0] for f in fits])
+slope_errs = np.array([f["slope_err"] for f in fits])
+labels = [f"{f['track']}\n{cut_dict[f['cut']]}" for f in fits]
 colors = ["C0" if f["track"] == "ll" else "C1" for f in fits]
+
+# Horizontal (constant) fit through the slope points: weighted mean
+if len(slopes) > 1:
+    w = 1.0 / slope_errs**2
+    c_fit = np.sum(w * slopes) / np.sum(w)
+    c_err = np.sqrt(1.0 / np.sum(w))
+    chi2_h = np.sum(((slopes - c_fit) / slope_errs) ** 2)
+    dof_h = len(slopes) - 1
+    pval_h = chi2_dist.sf(chi2_h, dof_h)
+else:
+    c_fit, c_err, chi2_h, dof_h, pval_h = slopes[0], slope_errs[0], 0.0, 0, np.nan
 
 fig, ax = plt.subplots(figsize=(max(8, 2.5 * len(labels)), 5))
 x_pos = np.arange(len(labels))
-ax.errorbar(x_pos, slopes, yerr=slope_errs, fmt="o", ms=6, capsize=4, lw=1.2, color="k")
 for i, (s, s_err, c) in enumerate(zip(slopes, slope_errs, colors)):
-    ax.errorbar(i, s, yerr=s_err, fmt="o", ms=6, capsize=4, lw=1.2, color=c,
-                label= fit["track"] if i == 0 or colors[i] != colors[i-1] else "")
+    ax.errorbar(i, s, yerr=s_err, fmt="o", ms=6, capsize=4, lw=1.2, color=c)
+
+# h_line = ax.axhline(c_fit, color="k", ls="--", lw=1.2,
+#                     label=(f"horizontal fit (c={_fmt_sci(c_fit, c_err)}, "
+#                            f"χ²/dof={chi2_h:.1f}/{dof_h}, {_fmt_pval(pval_h)})"))
+
 ax.set_xticks(x_pos)
-ax.set_xticklabels(labels, fontsize=8)
+ax.set_xticklabels(labels, fontsize=15)
 ax.set_ylabel("Slope (a) of A vs t/τ")
 ax.set_title("Linear fit slope: SM after weighting", fontsize=13, weight="bold")
 ax.grid(alpha=0.3)
-# Manual legend for tracks
+
 from matplotlib.lines import Line2D
-legend_elements = [Line2D([0], [0], marker="o", color="C0", label="ll", lw=0),
-                   Line2D([0], [0], marker="o", color="C1", label="dd", lw=0)]
-ax.legend(handles=legend_elements, fontsize="small")
+# legend_elements = [Line2D([0], [0], marker="o", color="C0", label="ll", lw=0),
+#                    Line2D([0], [0], marker="o", color="C1", label="dd", lw=0),
+#                    h_line]
+# ax.legend(handles=legend_elements)
+# ax.text(0.55, 0.11, f"horizontal fit: χ²/dof={chi2_h:.1f}/{dof_h}, {_fmt_pval(pval_h)}",
+#         transform=ax.transAxes, va="top", fontsize=16,
+#         bbox=dict(boxstyle="round", fc="white", ec="gray", alpha=0.8))
 plt.savefig(f"{outfolder}A_slope_fit.pdf", dpi=300, bbox_inches="tight")
 plt.close(fig)
 
-
-# # ── PDF: fits overlaid on data ──
-# from scipy.optimize import curve_fit
-
-# def _linear(x, a, b):
-#     return a * x + b
-
-# sm_after = combined[
-#     (combined["model"].isin(SM))
-#     & (combined["procedure"] == "after")
-# ]
-
-# fits = []
-# for track in TRACKS:
-#     for cut in CUTS:
-#         grp = sm_after[(sm_after["track"] == track) & (sm_after["cut"] == cut)].sort_values("bin")
-#         if grp.empty:
-#             print(f"WARNING: no data for {track}_{cut}, skipping fit plot")
-#             continue
-#         popt, pcov = curve_fit(
-#             _linear, grp["x"].to_numpy(), grp["A"].to_numpy(),
-#             sigma=grp["A_err"].to_numpy(), absolute_sigma=True,
-#         )
-#         fits.append((track, cut, grp, popt, np.sqrt(pcov[0, 0])))
-
-# n = len(fits)
-# cols = min(n, 3)
-# rows = (n + cols - 1) // cols
-# fig, axes = plt.subplots(rows, cols, figsize=(5 * cols, 4 * rows),
-#                          sharex=True, sharey=True, constrained_layout=True,
-#                          squeeze=False)
-# for idx, (track, cut, grp, popt, slope_err) in enumerate(fits):
-#     ax = axes[idx // cols, idx % cols]
-#     xerr = np.vstack([grp["xerr_lo"].to_numpy(), grp["xerr_hi"].to_numpy()])
-#     ax.errorbar(grp["x"].to_numpy(), grp["A"].to_numpy(), xerr=xerr,
-#                 yerr=grp["A_err"].to_numpy(), fmt="o", ms=4, capsize=3, lw=1)
-#     x_fit = np.linspace(grp["x"].min(), grp["x"].max(), 100)
-#     ax.plot(x_fit, _linear(x_fit, *popt), "r-", lw=1.5,
-#             label=f"a={popt[0]:.4f} ± {slope_err:.4f}")
-#     ax.set_title(f"{track} / {cut}", fontsize=9)
-#     ax.legend(fontsize="small")
-#     ax.grid(alpha=0.3)
-
-# for idx in range(n, rows * cols):
-#     axes[idx // cols, idx % cols].set_visible(False)
-
-# fig.suptitle("Linear fits: SM after weighting", fontsize=14, weight="bold")
-# plt.savefig(f"{outfolder}A_fit_overlays.pdf", dpi=300, bbox_inches="tight")
-# plt.close(fig)
+# python compare_hlt1cuts.py --day 08-20 --time 15hr54

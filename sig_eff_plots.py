@@ -118,7 +118,8 @@ def combine_all(yields, track, cuts, ycsets, polarities):
     return {cut: combine_yields([yields[track][y][p].get(cut) for y in ycsets for p in polarities])
             for cut in cuts}
 
-python sig_eff_plots.py --base_folder /eos/user/a/ahulsber/scripts/data/sig_eff/08-16/Pip_Hlt1TrackMVADecision_TOS_16-28 --hlt1_cut Pip_Hlt1TrackMVADecision_TOS
+
+# python sig_eff_plots.py --base_folder /eos/user/a/ahulsber/scripts/data/sig_eff/08-16/Pip_Hlt1TrackMVADecision_TOS_16-28 --hlt1_cut Pip_Hlt1TrackMVADecision_TOS
 
 # ---------------------------------------------------------------------------
 # Efficiency / rejection with error propagation
@@ -173,6 +174,61 @@ def eff_and_rej(yields_by_cut, cuts):
 # ---------------------------------------------------------------------------
 # Plotting
 # ---------------------------------------------------------------------------
+
+def plot_eff_rej_hlt1_baseline(series, title, outpath, annotate_fontsize=13):
+    """
+    Like plot_eff_rej, but each series entry supplies its OWN `cuts` list
+    (series[i]['cuts'][0] is that series' baseline, e.g. its HLT1 cut name)
+    instead of sharing one global cuts list — needed because different HLT1
+    cut variants are different baselines, not different points on a shared
+    x-axis of cut names.
+    series: list of {'label': str, 'yields_by_cut': {cut: yield_tuple}, 'cuts': [...]}
+    """
+    fig, ax = plt.subplots(figsize=(6.5, 6), constrained_layout=True)
+    markers = ["o", "s", "D", "^", "v", "<", ">"]
+
+    for i, s in enumerate(series):
+        cuts_local = s['cuts']
+        result = eff_and_rej(s['yields_by_cut'], cuts_local)
+        if result is None:
+            print(f"WARNING: no baseline data for '{s['label']}', skipping")
+            continue
+        sig_eff, sig_eff_err, bg_rej, bg_rej_err, Nsig_final = result
+        label = _millions_label(s['label'], Nsig_final)
+        valid = np.isfinite(sig_eff) & np.isfinite(bg_rej)
+        if not valid.any():
+            continue
+        m = markers[i % len(markers)]
+        ax.errorbar(bg_rej[valid], sig_eff[valid],
+                    xerr=bg_rej_err[valid], yerr=sig_eff_err[valid],
+                    fmt=m + "-", ms=6, capsize=3, lw=1, color=f"C{i}", label=label)
+        for j, cut in enumerate(cuts_local):
+            if valid[j]:
+                if j in (0,3,7):
+                    continue
+                ax.annotate(cut, (bg_rej[j], sig_eff[j]),
+                            fontsize=annotate_fontsize, ha="center", va="bottom",
+                            xytext=(0, 4), textcoords="offset points")
+
+    ax.set_xlabel("Background rejection (relative to HLT1 cut)")
+    ax.set_ylabel("Signal efficiency (relative to HLT1 cut)")
+    ax.set_ylim(-0.04, 1.04)
+    ax.set_xlim(-0.04, 1.04)
+    ax.grid(alpha=0.3)
+    ax.legend()
+    fig.suptitle(title, fontsize=14, weight="bold")
+    plt.savefig(outpath, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+def _millions_label(base_label, Nsig_final):
+    """Appends the final-cut signal yield in millions to a legend label,
+    e.g. '25c1 (0.42M events)'."""
+    if Nsig_final is None or not np.isfinite(Nsig_final) or Nsig_final <= 0:
+        return base_label
+    millions = Nsig_final / 1e6
+    return base_label + fr" ($\approx${millions:.0f}M events)"
+
+
 
 def _oom_label(base_label, Nsig_final):
     """Appends the order-of-magnitude of the final-cut signal yield to a
@@ -260,57 +316,91 @@ def default_skip_combo(track, ycset, polarity):
     """Mirrors the run script's dataset-availability gaps."""
     return (polarity == 'magdown' and ycset == '25c3') or (polarity == 'magup' and ycset == '25c2')
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--base_folder", type=str, default=None)
-    parser.add_argument("--hlt1_cut", type=str, required=True)
+    parser.add_argument("--base_folder", type=str, nargs='+', required=True,
+                         help="One base_folder per --hlt1_cut, same order.")
+    parser.add_argument("--hlt1_cut", type=str, nargs='+', required=True,
+                         help="One or more HLT1 cut names, e.g. two or three runs to compare.")
     args = parser.parse_args()
 
-    base_folder = args.base_folder or input("base_folder: ").strip()
-    if not base_folder.endswith("/"):
-        base_folder += "/"
+    if len(args.base_folder) != len(args.hlt1_cut):
+        raise ValueError("--base_folder and --hlt1_cut must have the same number of entries "
+                          f"(got {len(args.base_folder)} and {len(args.hlt1_cut)})")
+
+    runs = list(zip(args.hlt1_cut, args.base_folder))  # [(hlt1_cut, base_folder), ...]
 
     tracks = ['ll', 'dd']
     ycsets = ['25c1', '25c2', '25c3', '25c4']
     polarities = ['magup', 'magdown']
-    cuts = ['mass_lt', args.hlt1_cut, 'kin', 'probnn']
     _, _, _, files_dict, _ = init_data()
 
-    yields = gather_yields(base_folder, files_dict, tracks, ycsets, polarities, cuts,
-                            skip_combo=default_skip_combo,
-                            N_files_fit=10)
+    # --- existing 3 plots + yield gathering, once per HLT1-cut run ---
+    yields_by_run = {}   # hlt1_cut -> yields dict, kept for the new cross-run plot below
 
-    outdir = base_folder + "sig_eff_plots/"
-    os.makedirs(outdir, exist_ok=True)
+    for hlt1_cut, base_folder in runs:
+        if not base_folder.endswith("/"):
+            base_folder += "/"
+        cuts = ['mass_lt', hlt1_cut, 'kin', 'probnn']
 
-    # 1) ycset dependence per track, polarities combined
-    for track in tracks:
+        yields = gather_yields(base_folder, files_dict, tracks, ycsets, polarities, cuts,
+                                skip_combo=default_skip_combo, N_files_fit=10)
+        yields_by_run[hlt1_cut] = yields
+
+        outdir = base_folder + "sig_eff_plots/"
+        os.makedirs(outdir, exist_ok=True)
+
+        for track in tracks:
+            series = [
+                {'label': ycset, 'yields_by_cut': combine_polarities(yields, track, ycset, cuts, polarities)}
+                for ycset in ycsets
+            ]
+            plot_eff_rej(series, cuts, f'{track}: ycset dependence (combined polarities)',
+                         outdir + f'{track}_ycset_dependence_eff_rej.pdf')
+
+        for track in tracks:
+            series = [
+                {'label': polarity, 'yields_by_cut': combine_ycsets(yields, track, polarity, cuts, ycsets)}
+                for polarity in polarities
+            ]
+            plot_eff_rej(series, cuts, f'{track}: polarity dependence (combined ycsets)',
+                         outdir + f'{track}_polarity_dependence_eff_rej.pdf')
+
         series = [
-            {'label': ycset, 'yields_by_cut': combine_polarities(yields, track, ycset, cuts, polarities)}
-            for ycset in ycsets
+            {'label': track, 'yields_by_cut': combine_all(yields, track, cuts, ycsets, polarities)}
+            for track in tracks
         ]
-        plot_eff_rej(series, cuts, f'{track}: ycset dependence (combined polarities)',
-                     outdir + f'{track}_ycset_dependence_eff_rej.pdf')
+        plot_eff_rej(series, cuts, 'Track comparison (combined ycset & polarity)',
+                     outdir + 'track_comparison_eff_rej.pdf')
 
-    # 2) polarity dependence per track, ycsets combined
+        print(f"Plots saved to: {outdir}")
+
+    # --- new plot: HLT1-cut comparison, one figure per track, HLT1 cut's own point = 100% ---
+    combined_outdir = os.path.commonpath([bf for _, bf in runs]) + "/sig_eff_plots_hlt1_comparison/"
+    os.makedirs(combined_outdir, exist_ok=True)
+
     for track in tracks:
-        series = [
-            {'label': polarity, 'yields_by_cut': combine_ycsets(yields, track, polarity, cuts, ycsets)}
-            for polarity in polarities
-        ]
-        plot_eff_rej(series, cuts, f'{track}: polarity dependence (combined ycsets)',
-                     outdir + f'{track}_polarity_dependence_eff_rej.pdf')
+        series = []
+        for hlt1_cut, _ in runs:
+            cuts_rel = [hlt1_cut, 'kin', 'probnn']   # this run's HLT1 point is now the 100% baseline
+            yields_by_cut = combine_all(yields_by_run[hlt1_cut], track, cuts_rel, ycsets, polarities)
+            series.append({'label': hlt1_cut, 'yields_by_cut': yields_by_cut, 'cuts': cuts_rel})
 
-    # 3) track comparison, everything else combined
-    series = [
-        {'label': track, 'yields_by_cut': combine_all(yields, track, cuts, ycsets, polarities)}
-        for track in tracks
-    ]
-    plot_eff_rej(series, cuts, 'Track comparison (combined ycset & polarity)',
-                 outdir + 'track_comparison_eff_rej.pdf')
+        plot_eff_rej_hlt1_baseline(
+            series,
+            f'{track}: effect of kinematic cuts, per HLT1 cut (HLT1 point = 100%)',
+            combined_outdir + f'{track}_hlt1_comparison_eff_rej.pdf',
+            annotate_fontsize=13,
+        )
 
-
-    print(f"Plots saved to: {outdir}")
+    print(f"HLT1-comparison plots saved to: {combined_outdir}")
 
 
+
+# python sig_eff_plots.py \
+#   --hlt1_cut Pip_Hlt1TrackMVADecision_TOS DpTIS KS_Hlt1TwoTrackKsDecision_TOS DpTIS_PipMVATOS DpTIS_KSTwoTracks \
+#   --base_folder /eos/user/a/ahulsber/scripts/data/sig_eff/08-16/Pip_Hlt1TrackMVADecision_TOS_16-28 \
+# /eos/user/a/ahulsber/scripts/data/sig_eff/08-16/DpTIS_16-28 \
+# /eos/user/a/ahulsber/scripts/data/sig_eff/08-16/KS_Hlt1TwoTrackKsDecision_TOS_16-28 \
+# /eos/user/a/ahulsber/scripts/data/sig_eff/08-16/DpTIS_PipMVATOS_16-28 \
+# /eos/user/a/ahulsber/scripts/data/sig_eff/08-16/DpTIS_KSTwoTracks_16-28
