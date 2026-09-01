@@ -1,0 +1,185 @@
+# ============================================================================
+#  HTCondor configuration for the kspi_analysis pipeline (stages 1-6).
+#
+#  This one file controls *everything*: which samples to process, the extra
+#  CLI flags passed to each stage script, and the resources each job requests.
+#
+#  Generate the per-stage DAGs with:
+#      python htcondor/generate_dag.py --all            # every stage (s1..s6)
+#      python htcondor/generate_dag.py --stage s3       # just one stage
+#      python htcondor/generate_dag.py --stage s2 --dry-run
+#
+#  Submit everything (s1 -> s2 -> s3 -> s4 -> s5, waiting for each to drain):
+#      ./htcondor/run_chain.sh
+#  Submit one stage by itself:
+#      ./htcondor/submit_stage.sh s3
+#
+#  Stage 6 (combine) is a single quick job and is NOT in the auto chain:
+#  after s3 finishes, run it yourself (its ready-to-run command is printed by
+#  run_chain.sh, or emit a one-node DAG with generate_dag.py --stage s6).
+#
+#  Before submitting, export the layout root the code reads (see
+#  kspi_analysis/core/paths.py):
+#      export KSPI_OUT_ROOT=/eos/user/a/ahulsber/scripts/analysis
+#  getenv=true in every .sub inherits the submit-time environment.
+#
+#  How the selectors combine:
+#    * track    : ["ll","dd"]      empty = all
+#    * hlt1     : ["DpTIS", ...]   empty = all six; accept raw keys, short
+#                                  tokens (KS_TwoTracks, Pip_TrackMVA_TOS,
+#                                  noHlt1) or human labels
+#    * ycset    : []               empty = all
+#    * polarity : []               empty = all
+#
+#  Resource keys per stage: memory (MB), flavour (LHCb JOBflavour),
+#  cpus (request_cpus).  Stages 3 and 5 run many mass fits and usually need
+#  more than the 2h 'longlunch' flavour - bump to 'tomorrow' if they time out.
+# ============================================================================
+
+common:
+  # Absolute path to the analysis repo on the cluster.  Baked into every .sub
+  # as both `initialdir` and `environment = "REPO=..."`.
+  repo: /eos/user/a/ahulsber/scripts/kspi_analysis
+
+  # Interpreter used by every worker.  Default is the LHCb conda env (has
+  # ROOT).  You can leave this commented out and instead `export PYTHON=...`
+  # before submitting; the worker honors that env var too.
+  # python: lb-conda default python3
+
+  # Output tag shared by stages 2-6 (stage 1 has no tag).  Every reweighting
+  # branch, mass fit, statistic and combination lands under this tag.
+  tag: v4
+
+  # Sample selectors.  Empty list = "all of that kind".
+  # track: [ll]
+  # hlt1: [KS_TwoTracks_TOS, DpTIS, Pip_TrackMVA_TOS]
+  # ycset: [25c1, 25c2, 25c3, 25c4]
+
+  track: [ll, dd]
+  hlt1: [KS_TwoTracks_TOS, DpTIS, Pip_Hlt1TrackMVADecision_TOS]
+  ycset: [25c1, 25c2, 25c3, 25c4]
+  polarity: []
+
+  # HTCondor knobs.
+  maxjobs: 100               # Max nodes running at once per stage (MAXJOBS).
+  no_mt: false              # Pass --no-mt to every job if true (s1-s5 only;
+                            # disable ROOT multithreading).
+  overwrite: false          # Pass --overwrite to every job if true (s1-s4;
+                            # s5 and s6 do not define the flag).
+
+# ----------------------------------------------------------------------------
+# s1_skim: read data, apply cuts, write the skim.  Slowest I/O stage; runs
+# once per HLT1 selection (no tag).
+# ----------------------------------------------------------------------------
+stage1:
+  enabled: true
+  memory: 4000
+  flavour: longlunch
+  cpus: 1
+  # Extra flags passed to every s1_skim.py job, e.g.
+  #   ["--source", "apd"]                      # default
+  #   ["--source", "pfns", "--pfns-base", "/eos/..."]
+  #   ["--n-files", "20"]
+  #   ["--kinvar-bins", "10"]
+  #   ["--extra-columns", "P", "PT"]
+  args: []
+
+# ----------------------------------------------------------------------------
+# s2_reweight: run the reweighting, snapshot every iteration's weights.
+# ----------------------------------------------------------------------------
+stage2:
+  enabled: true
+  memory: 16000
+  flavour: longlunch
+  cpus: 4
+  # Named reweighting-cycle scheme (config/weighting.py).  Other flags:
+  #   ["--cycles", "nominal"]            <-- most common
+  #   ["--threshold", "2"]
+  #   ["--lt-bin-edges", "0", "1", "3"]
+  #   ["--standard-model", "johnson_exp"]
+  #   ["--param-seed-dir", "/eos/.../seeds"]
+  args: ["--cycles", "nominal", "--kinvar-bins", "20"]
+
+# ----------------------------------------------------------------------------
+# s3_asymmetries: mass fits in lifetime bins -> asymmetries.csv.
+# ----------------------------------------------------------------------------
+stage3:
+  enabled: true
+  memory: 8000
+  flavour: longlunch
+  cpus: 4
+  #   ["--models", "johnson_exp1", "johnson_exp", "johnson_gauss_exp"]       # default: all present
+  #   ["--procedures", "before", "after"]
+  #   ["--standard-model", "johnson_exp1"]
+  #   ["--no-plots"]
+  #   ["--blind-seed", "0"]
+  args: ["--procedures", "before", "after", "--models", "johnson_exp1", "johnson_exp", "johnson_gauss_exp"]
+
+# ----------------------------------------------------------------------------
+# s4_statistics: statistical cost of the reweighting (cheap, reads weights).
+# ----------------------------------------------------------------------------
+stage4:
+  enabled: true
+  memory: 4000
+  flavour: longlunch
+  cpus: 1
+  #   ["--no-plots"]
+  args: []
+
+# ----------------------------------------------------------------------------
+# s5_weighting_performance: diagnostics.  A-kin / A-LT spawn hundreds of fits.
+# ----------------------------------------------------------------------------
+stage5:
+  enabled: true
+  memory: 8000
+  flavour: longlunch
+  cpus: 4
+  #   ["--only", "w-kin", "A-kin"]       # subset
+  #   ["--all"]                          # everything (slowest)
+  #   ["--standard-model", "johnson_exp1"]
+  args: [--all, "--standard-model", "johnson_exp1"]
+
+# ----------------------------------------------------------------------------
+# s6_combine: combine stage-3 results.  Single job, run manually (not chained).
+# generate_dag.py --stage s6 writes a one-node DAG from these args, or you can
+# run the printed command directly.
+# ----------------------------------------------------------------------------
+stage6:
+  name: normal
+  #   ["--hlt1-set", "DpTIS", "KS_Hlt1TwoTrackKsDecision_TOS"]
+  #   ["--keep", "track", "hlt1"]
+  #   ["--compare", "hlt1", "--panel-by", "track"]
+  #   ["--require-converged"]
+  #   ["--blind-seed", "0"]
+  args: ["--hlt1-set", "DpTIS", "KS_Hlt1TwoTrackKsDecision_TOS", "Pip_TrackMVA_TOS", 
+    "--name", "test", 
+    "--compare", "polarity",
+    "--keep", "track", "hlt1", "polarity", 
+    # "--require-converged"
+    ]
+
+# --tag v1 /
+# --hlt1-set DpTIS KS_Hlt1TwoTrackKsDecision_TOS Pip_MVATrack_TOS / 
+# --name test /
+# --compare polarity /
+# --keep track hlt1 polarity /
+# "--require-converged"
+# ]
+
+
+# usage: s6_combine.py [-h] [--out-root OUT_ROOT] [--tag TAG] --name NAME
+#                      [--track {ll,dd}] [--ycset [YCSET ...]]
+#                      [--polarity [{magup,magdown} ...]]
+#                      [--hlt1-set [HLT1_SET ...]] [--keep [KEEP ...]]
+#                      [--models [MODELS ...]] [--procedures [PROCEDURES ...]]
+#                      [--compare COMPARE] [--panel-by PANEL_BY]
+#                      [--standard-model STANDARD_MODEL] [--require-converged]
+#                      [--blind-seed BLIND_SEED]
+# s6_combine.py: error: unrecognized arguments: hlt1 polarity
+
+
+# ----------------------------------------------------------------------------
+# Worker script globals (rarely changed).
+# ----------------------------------------------------------------------------
+env:
+  log_dir: logs                # job log/out/err land in htcondor/logs/
